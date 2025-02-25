@@ -137,7 +137,7 @@ void SGD(NeuralNetwork *nn, double learning_rate, double y_true)
         for (int j = 0; j < current->no_of_nodes; j++) {
             double error = 0.0;
             for (int k = 0; k < next->no_of_nodes; k++) {
-                // FIX: Use next->deltas[k] (not next->deltas[j]) to accumulate error.
+                
                 error += next->weights[k][j] * next->deltas[k];
             }
             current->deltas[j] = error * relu_deriv(current->outputs[j]);
@@ -156,7 +156,7 @@ void SGD(NeuralNetwork *nn, double learning_rate, double y_true)
         for (int j = 0; j < layer->no_of_nodes; j++) {
             layer->bias[j] -= learning_rate * layer->deltas[j];
             for (int k = 0; k < layer->no_inputs; k++) {
-                // FIX: Use layer_input[k] (not layer_input[j]) when updating weights.
+                
                 layer->weights[j][k] -= learning_rate * layer->deltas[j] * layer_input[k];
             }
         }
@@ -172,7 +172,7 @@ double* forward_pass(NeuralNetwork* nn, double* input) {
         Layer* current = &nn->layer[i];
         for (int j = 0; j < current->no_of_nodes; j++) {
             double sum = current->bias[j];
-            // FIX: Sum over all inputs (using correct indices) for the weighted sum.
+            .
             for (int k = 0; k < current->no_inputs; k++) {
                 sum += current->weights[j][k] * current_input[k];
             }
