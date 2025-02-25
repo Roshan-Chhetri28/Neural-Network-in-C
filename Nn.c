@@ -172,7 +172,7 @@ double* forward_pass(NeuralNetwork* nn, double* input) {
         Layer* current = &nn->layer[i];
         for (int j = 0; j < current->no_of_nodes; j++) {
             double sum = current->bias[j];
-            .
+            
             for (int k = 0; k < current->no_inputs; k++) {
                 sum += current->weights[j][k] * current_input[k];
             }
@@ -305,7 +305,7 @@ int main()
 {
     NeuralNetwork *nn;
     int no_of_layers = 3;
-    .
+    
     int no_of_nodes[] = {2, 3, 1};
     int x_rows, x_cols;
     int y_rows, y_cols;
