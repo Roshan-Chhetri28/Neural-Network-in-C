@@ -54,7 +54,7 @@ The program reads `x_train.csv` and `y_train.csv`, initializes a neural network 
 gcc -o neural_net neural_net.c -lm
 ./neural_net
 ```
-##Future Plans
-Support for batch training instead of SGD.
-Additional activation functions like Leaky ReLU or Softmax.
-Dynamic learning rate adjustments for better convergence.
+## Future Plans
+### Support for batch training instead of SGD.
+### Additional activation functions like Leaky ReLU or Softmax.
+### Dynamic learning rate adjustments for better convergence.
