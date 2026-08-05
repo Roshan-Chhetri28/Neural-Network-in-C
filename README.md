@@ -1,394 +1,137 @@
 # Neural Network in C
 
-<p align="center">
-  <img src="https://user-images.githubusercontent.com/7684140/27337013-2e2e6e7c-55b2-11e7-9e3a-2b7b6b2c7b2a.png" alt="Neural Network Banner" width="600"/>
-</p>
+A feedforward neural network written from scratch in C, with no ML libraries. Forward and backward
+propagation, stochastic gradient descent, ReLU and sigmoid activations, Xavier/He initialisation and
+binary cross-entropy are all implemented directly, including the underlying loops.
 
-<p align="center">
-  <b>A simple yet powerful neural network implementation in C</b><br>
-  <i>Learn, experiment, and understand the math behind neural networks!</i>
-</p>
+I built this to understand the mechanics rather than call `model.fit()`. The whole thing is a single
+file, `Nn.c`, in about 350 lines.
 
----
-
-## 🚀 Features
-
-<ul>
-  <li><b>Written in C</b>: Fast and lightweight</li>
-  <li><b>Customizable Architecture</b>: Easily modify layers and neurons</li>
-  <li><b>CSV Data Support</b>: Train and test with your own datasets</li>
-  <li><b>Educational</b>: Perfect for learning neural network basics</li>
-</ul>
-
----
-
-## 📂 Project Structure
-
-```text
-├── Nn.c           # Main neural network implementation
-├── x_train.csv    # Training features
-├── y_train.csv    # Training labels
-├── x_test.csv     # Test features
-├── y_test.csv     # Test labels
-└── README.md      # Project documentation
-```
-
----
-
-## 🛠️ Getting Started
-
-### Prerequisites
-
-- GCC or any C compiler
-- Make (optional)
-
-### Build & Run
+## Build and run
 
 ```bash
-# Compile
-gcc Nn.c -o nn -lm
-
-# Run
+gcc -Wall -O2 Nn.c -o nn -lm
 ./nn
 ```
 
----
+No dependencies beyond libc and libm.
 
-## 📊 Dataset Format
+## Architecture
 
-- <b>x_train.csv / x_test.csv</b>: Features (each row = sample)
-- <b>y_train.csv / y_test.csv</b>: Labels (each row = label)
+| Component        | Implementation                                                        |
+| ---------------- | --------------------------------------------------------------------- |
+| Layers           | Fully connected, configurable via `no_of_nodes[]` in `main()`          |
+| Hidden activation| ReLU                                                                   |
+| Output activation| Sigmoid (single output neuron, binary classification)                  |
+| Loss             | Binary cross-entropy, clipped at 1e-8 to avoid `log(0)`                |
+| Initialisation   | He for hidden layers, Xavier for the output layer                      |
+| Optimiser        | Stochastic gradient descent, one example at a time                     |
+| Data loading     | CSV parser with header and index-column handling                       |
 
----
+The default configuration is a 3-layer network (8 → 4 → 1) trained for 100 epochs at a learning rate
+of 0.01, with a fixed RNG seed so runs are reproducible.
 
-## 🧠 How It Works
+## Implementation notes
 
-<ol>
-  <li><b>Initialize Network</b>: Define layers and neurons</li>
-  <li><b>Forward Propagation</b>: Calculate outputs</li>
-  <li><b>Backpropagation</b>: Adjust weights using error</li>
-  <li><b>Training</b>: Iterate over dataset to minimize loss</li>
-</ol>
+**The output-layer gradient is collapsed.** Rather than chaining the derivative of binary
+cross-entropy with the derivative of sigmoid, the two cancel analytically:
 
----
+$$\delta^{(L)} = a^{(L)} - y$$
 
-## 🧮 Key Equations
+which is what `SGD()` computes directly. This is both simpler and numerically better behaved than
+applying the two derivatives separately.
 
-<details>
-<summary><b>Activation Functions</b></summary>
+**ReLU's derivative is evaluated on the post-activation output.** `relu_deriv(a)` rather than
+`relu_deriv(z)`. This is valid specifically for ReLU, since `relu(z) > 0` exactly when `z > 0`, so
+the two agree everywhere except at `z = 0`. It would not be valid for sigmoid or tanh.
 
-<br>
-<b>Sigmoid:</b>
+**Xavier vs He are assigned per layer type.** He (variance `2/n_in`) for the ReLU hidden layers,
+Xavier (variance `1/n_in`) for the sigmoid output layer. Normal samples come from a Box-Muller
+transform in `rand_normal()`.
 
-$$
-\sigma(z) = \frac{1}{1 + e^{-z}}
-$$
+## A bug worth documenting
 
-<b>ReLU:</b>
+The network originally would not converge. Loss sat flat or ran away to NaN within a few epochs, and
+the workaround at the time was to drop the learning rate to 0.0001, which masked the symptom without
+fixing anything.
 
-$$
-\text{ReLU}(z) = \max(0, z)
-$$
-</details>
+The cause was not in the network. It was in the data loading:
 
-<details>
-<summary><b>Weight Initialization</b></summary>
+1. **The labels were wrong.** `y_train.csv` is written by pandas with an unnamed index column, so
+   column 0 is the row index and column 1 is the actual label. The training loop was reading column
+   0 — meaning the network was being asked to output the row index (0 to 711) through a sigmoid,
+   scored against binary cross-entropy.
+2. **The index column was also a feature.** `x_train.csv` carries the same index column. It ranges
+   from 0 to 711 while every other feature sits roughly within [-2, 9], so it dominated every dot
+   product into the first layer and produced saturating activations and exploding gradients.
+3. **The header row was being trained on.** The CSV parser had no header handling, so the header line
+   parsed cleanly as numbers and became training example #1.
 
-<br>
-<b>Xavier Initialization (Output Layer):</b>
+The lesson generalises: the bug was in the part of the pipeline I never questioned, not in the
+backprop I'd written myself and was least confident about. `load_csv()` now takes explicit
+`skip_header` and `skip_first_col` flags rather than assuming the file is clean.
 
-$$
-W \sim \mathcal{N}\left(0, \frac{1}{n_{in}}\right)
-$$
+## Data
 
-<b>He Initialization (Hidden Layers):</b>
+The dataset is a binary classification problem with 712 training and 179 test samples, 12 features
+after dropping the index column. Features are pre-standardised, with several one-hot encoded columns.
 
-$$
-W \sim \mathcal{N}\left(0, \frac{2}{n_{in}}\right)
-$$
-</details>
+The majority-class baseline is **62.4%** — any accuracy at or below that means the network is not
+learning.
 
-<details>
-<summary><b>Loss Function</b></summary>
+| File            | Contents                     |
+| --------------- | ---------------------------- |
+| `x_train.csv`   | Training features            |
+| `y_train.csv`   | Training labels              |
+| `x_test.csv`    | Test features                |
+| `y_test.csv`    | Test labels                  |
 
-<br>
-<b>Binary Cross-Entropy:</b>
+Every file has a header row and a leading index column; `load_csv()` strips both.
 
-$$
-L = -\frac{1}{N} \sum_{i=1}^{N} \left[y_i \log(y_i^\text{hat}) + (1 - y_i) \log(1 - y_i^\text{hat})\right]
-$$
-</details>
+## Results
 
-<details>
-<summary><b>Forward Propagation</b></summary>
+Default configuration (8 → 4 → 1, lr 0.01, 100 epochs, seed 42):
 
-<br>
-For each layer $l$:
+```
+Train: 712 samples x 12 features | Test: 179 samples
 
-$$
-z^{(l)} = W^{(l)} a^{(l-1)} + b^{(l)}
-$$
-$$
-a^{(l)} = \text{activation}(z^{(l)})
-$$
-</details>
+Epoch    0: train loss = 0.6823, train acc = 59.55% | test loss = 0.6860, test acc = 58.66%
+Epoch   10: train loss = 0.4504, train acc = 81.74% | test loss = 0.4594, test acc = 81.56%
+Epoch   20: train loss = 0.4144, train acc = 81.74% | test loss = 0.4468, test acc = 82.68%
+Epoch   50: train loss = 0.3955, train acc = 82.87% | test loss = 0.4508, test acc = 81.01%
+Epoch   99: train loss = 0.3877, train acc = 83.15% | test loss = 0.4519, test acc = 81.01%
 
-<details>
-<summary><b>Backpropagation</b></summary>
-
-<br>
-For output layer:
-
-$$
-\delta^{(L)} = a^{(L)} - y
-$$
-
-For hidden layers:
-
-$$
-\delta^{(l)} = (W^{(l+1)})^T \delta^{(l+1)} \odot \text{activation}'(z^{(l)})
-$$
-
-Weight and bias updates:
-
-$$
-W^{(l)} = W^{(l)} - \eta \frac{\partial L}{\partial W^{(l)}}
-$$
-$$
-b^{(l)} = b^{(l)} - \eta \frac{\partial L}{\partial b^{(l)}}
-$$
-
-Where:
-- $\eta$ is the learning rate
-- $\odot$ is element-wise multiplication
-- $a^{(l)}$ is the activation of layer $l$
-- $z^{(l)}$ is the weighted input to layer $l$
-- $\delta^{(l)}$ is the error term for layer $l$
-</details>
-
----
-
-## ✨ Example Usage
-
-```c
-// ...existing code...
-// Example: Training the network
-train_network(x_train, y_train);
-// ...existing code...
+Final test accuracy: 81.01%
 ```
 
----
+**81.01% test accuracy against a 62.4% majority-class baseline.**
 
-## 📈 Results
+Worth noting: test loss bottoms out around epoch 20 at 0.4468 and then drifts upward while training
+loss keeps falling. That is textbook overfitting, and with early stopping around epoch 20 the network
+reaches 82.68%. The gap is small because the network is small — there isn't much capacity to overfit
+with. Adding regularisation or early stopping would be the next thing to do.
 
-After training, the network predicts outputs for test data and prints accuracy.
+## On performance
 
----
+An equivalent network in TensorFlow trains roughly 2x slower on this problem, but that comparison
+deserves a caveat. At this scale — a handful of neurons and a few hundred samples — the difference is
+almost entirely framework overhead: graph construction and per-step Python dispatch, not arithmetic.
+The matrix code here is plain nested loops with no blocking, vectorisation or BLAS. On any real
+workload TensorFlow wins comfortably.
 
-## 🤝 Contributing
+## Possible extensions
 
-Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
+- Mini-batch gradient descent instead of per-sample SGD
+- Additional activations (Leaky ReLU, softmax) and multi-class output
+- Learning rate scheduling
+- Gradient checking against numerical gradients as a built-in test
 
----
+## References
 
-## 📄 License
+- [Neural Networks and Deep Learning](http://neuralnetworksanddeeplearning.com/), Michael Nielsen
 
-This project is licensed under the MIT License.
+## Author
 
----
+Roshan Chhetri — [github.com/Roshan-Chhetri28](https://github.com/Roshan-Chhetri28)
 
-## 🙏 Acknowledgements
-
-- [Neural Networks and Deep Learning](http://neuralnetworksanddeeplearning.com/)
-- [Awesome C](https://github.com/kozross/awesome-c)
-
----
-
-## 📬 Contact
-
-<b>Author:</b> Roshan Chhetri  
-<b>GitHub:</b> <a href="https://github.com/Roshan-Chhetri28">Roshan-Chhetri28</a>
-
----
-
-## 🌱 Future Plans
-
-- Support for batch training instead of SGD
-- Additional activation functions like Leaky ReLU or Softmax
-- Dynamic learning rate adjustments for better convergence
-# Neural Network in C
-
-![Neural Network Banner](https://user-images.githubusercontent.com/7684140/27337013-2e2e6e7c-55b2-11e7-9e3a-2b7b6b2c7b2a.png)
-
-A simple yet powerful implementation of a Neural Network in C. This project demonstrates the fundamentals of neural networks, including forward propagation, backpropagation, and training using CSV datasets.
-
----
-
-## 🚀 Features
-- **Written in C**: Fast and lightweight
-- **Customizable Architecture**: Easily modify layers and neurons
-- **CSV Data Support**: Train and test with your own datasets
-- **Educational**: Perfect for learning neural network basics
-
----
-
-## 📂 Project Structure
-```
-├── Nn.c           # Main neural network implementation
-├── x_train.csv    # Training features
-├── y_train.csv    # Training labels
-├── x_test.csv     # Test features
-├── y_test.csv     # Test labels
-└── README.md      # Project documentation
-```
-
----
-
-## 🛠️ Getting Started
-
-### Prerequisites
-- GCC or any C compiler
-- Make (optional)
-
-### Build & Run
-```bash
-# Compile
-gcc Nn.c -o nn -lm
-
-# Run
-./nn
-```
-
----
-
-## 📊 Dataset Format
-- **x_train.csv / x_test.csv**: Features (each row = sample)
-- **y_train.csv / y_test.csv**: Labels (each row = label)
-
----
-
-## 🧠 How It Works
-1. **Initialize Network**: Define layers and neurons
-2. **Forward Propagation**: Calculate outputs
-3. **Backpropagation**: Adjust weights using error
-4. **Training**: Iterate over dataset to minimize loss
-
----
-
-## 🧮 Key Equations
-
-### Activation Functions
-
-**Sigmoid:**
-
-$$
-\sigma(z) = \frac{1}{1 + e^{-z}}
-$$
-
-**ReLU:**
-
-$$
-\text{ReLU}(z) = \max(0, z)
-$$
-
-### Weight Initialization
-
-**Xavier Initialization (Output Layer):**
-
-$$
-W \sim \mathcal{N}\left(0, \frac{1}{n_{in}}\right)
-$$
-
-**He Initialization (Hidden Layers):**
-
-$$
-W \sim \mathcal{N}\left(0, \frac{2}{n_{in}}\right)
-$$
-
-### Loss Function
-
-**Binary Cross-Entropy:**
-
-$$
-L = -\frac{1}{N} \sum_{i=1}^{N} \left[y_i \log(y_i^\text{hat}) + (1 - y_i) \log(1 - y_i^\text{hat})\right]
-$$
-
-### Forward Propagation
-
-For each layer $l$:
-
-$$
-z^{(l)} = W^{(l)} a^{(l-1)} + b^{(l)}
-$$
-$$
-a^{(l)} = \text{activation}(z^{(l)})
-$$
-
-### Backpropagation
-
-For output layer:
-
-$$
-\delta^{(L)} = a^{(L)} - y
-$$
-
-For hidden layers:
-
-$$
-\delta^{(l)} = (W^{(l+1)})^T \delta^{(l+1)} \odot \text{activation}'(z^{(l)})
-$$
-
-Weight and bias updates:
-
-$$
-W^{(l)} = W^{(l)} - \eta \frac{\partial L}{\partial W^{(l)}}
-$$
-$$
-b^{(l)} = b^{(l)} - \eta \frac{\partial L}{\partial b^{(l)}}
-$$
-
-Where:
-- $\eta$ is the learning rate
-- $\odot$ is element-wise multiplication
-- $a^{(l)}$ is the activation of layer $l$
-- $z^{(l)}$ is the weighted input to layer $l$
-- $\delta^{(l)}$ is the error term for layer $l$
-
----
-
----
-
-## ✨ Example Usage
-```c
-// ...existing code...
-// Example: Training the network
-train_network(x_train, y_train);
-// ...existing code...
-```
-
----
-
-## 📈 Results
-After training, the network predicts outputs for test data and prints accuracy.
-
----
-
-## 🤝 Contributing
-Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
-
----
-
-## 📄 License
-This project is licensed under the MIT License.
-
----
-
-## 🙏 Acknowledgements
-- [Neural Networks and Deep Learning](http://neuralnetworksanddeeplearning.com/)
-- [Awesome C](https://github.com/kozross/awesome-c)
-
----
-
-## 📬 Contact
-**Author:** Roshan Chhetri  
-**GitHub:** [Roshan-Chhetri28](https://github.com/Roshan-Chhetri28)
+MIT License.
